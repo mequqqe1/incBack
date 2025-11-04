@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SharpAuthDemo.Data;
 using SharpAuthDemo.Models;
+using SharpAuthDemo.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -117,6 +118,7 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 });
+builder.Services.AddScoped<ProfileAccessService>();
 
 var app = builder.Build();
 
