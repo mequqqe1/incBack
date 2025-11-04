@@ -4009,19 +4009,19 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\daule\\.nuget\\packages\\": {}
+    "/Users/dauletqqe/.nuget/packages/": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\daule\\RiderProjects\\INCBack\\INCBack\\INCBack.csproj",
+      "projectUniqueName": "/Users/dauletqqe/RiderProjects/incBack/INCBack.csproj",
       "projectName": "INCBack",
-      "projectPath": "C:\\Users\\daule\\RiderProjects\\INCBack\\INCBack\\INCBack.csproj",
-      "packagesPath": "C:\\Users\\daule\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\daule\\RiderProjects\\INCBack\\INCBack\\obj\\",
+      "projectPath": "/Users/dauletqqe/RiderProjects/incBack/INCBack.csproj",
+      "packagesPath": "/Users/dauletqqe/.nuget/packages/",
+      "outputPath": "/Users/dauletqqe/RiderProjects/incBack/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\daule\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "/Users/dauletqqe/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net9.0"
@@ -4115,7 +4115,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Users\\daule\\.dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/9.0.306/PortableRuntimeIdentifierGraph.json"
       }
     }
   },
