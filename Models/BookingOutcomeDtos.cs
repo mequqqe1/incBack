@@ -2,12 +2,14 @@
 using System.ComponentModel.DataAnnotations;
 using SharpAuthDemo.Models;
 
-public record CloseBookingRequest(
-    [property:Required] string Summary,
-    string? Recommendations,
-    string? NextSteps,
-    string? SpecialistPrivateNotes
-);
+public record CloseBookingRequest
+{
+    [Required]
+    public string Summary { get; init; } = default!;
+    public string? Recommendations { get; init; }
+    public string? NextSteps { get; init; }
+    public string? SpecialistPrivateNotes { get; init; }
+}
 
 public record BookingOutcomeResponse(
     Guid BookingId,
