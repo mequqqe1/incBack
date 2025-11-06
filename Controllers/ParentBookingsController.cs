@@ -1,10 +1,13 @@
-﻿using INCBack.Models;
+﻿using System.Linq.Expressions;
+using INCBack.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SharpAuthDemo.Data;
 using SharpAuthDemo.Models;
+using Swashbuckle.AspNetCore.Annotations;
+using Swashbuckle.Swagger.Annotations;
 
 namespace SharpAuthDemo.Controllers;
 
@@ -22,92 +25,120 @@ public class ParentBookingsController : ControllerBase
         _db = db;
     }
 
+    // Единая проекция, которую EF может перевести в SQL
+    private static readonly Expression<Func<Booking, BookingResponse>> BookingToResponse =
+        b => new BookingResponse(
+            b.Id,
+            b.SpecialistUserId,
+            b.ParentUserId,
+            b.StartsAtUtc,
+            b.EndsAtUtc,
+            b.Status,
+            b.MessageFromParent,
+            b.AvailabilitySlotId,
+            b.ChildId,                 // <-- порядок согласован
+            b.CreatedAtUtc,
+            b.UpdatedAtUtc
+        );
+
     /// <summary>
     /// Создать бронирование на конкретный слот (статус Pending).
-    /// Атомарно помечает слот как занятый. Если не получилось — 409.
+    /// Атомарно помечает слот как занятый. Если не получилось — 409 (Slot already booked).
+    /// Требует, чтобы выбранный ребёнок принадлежал текущему родителю.
     /// </summary>
+    /// <remarks>
+    /// Бизнес-правила:
+    /// - Слот должен быть в будущем
+    /// - Профиль специалиста должен быть одобрен (Approved)
+    /// - Ребёнок должен принадлежать текущему пользователю (родителю)
+    /// </remarks>
     [HttpPost]
-[HttpPost]
-public async Task<ActionResult<BookingResponse>> Create(CreateBookingRequest req)
-{
-    var parent = await _userManager.GetUserAsync(User);
-    if (parent is null) return Unauthorized();
-
-    var now = DateTime.UtcNow;
-
-    await using var tx = await _db.Database.BeginTransactionAsync();
-
-    // 1) слот
-    var slot = await _db.AvailabilitySlots
-        .AsNoTracking()
-        .FirstOrDefaultAsync(s => s.Id == req.AvailabilitySlotId);
-
-    if (slot is null)
-        return NotFound(new { error = "Slot not found" });
-
-    // 2) профиль специалиста одобрен
-    var isApproved = await _db.SpecialistProfiles
-        .AsNoTracking()
-        .AnyAsync(p => p.UserId == slot.SpecialistUserId &&
-                       p.Status == ModerationStatus.Approved);
-
-    if (!isApproved)
-        return BadRequest(new { error = "Specialist is not available for booking (profile not approved)" });
-
-    // 3) нельзя в прошлое
-    if (slot.StartsAtUtc < now)
-        return BadRequest(new { error = "Cannot book a past slot" });
-
-    // 4) подтверждаем, что ребёнок принадлежит текущему родителю
-    //    (через связь Child -> ParentProfile -> UserId)
-    var childExists = await _db.Children
-        .Include(c => c.ParentProfile)
-        .AnyAsync(c => c.Id == req.ChildId && c.ParentProfile!.UserId == parent.Id);
-
-    if (!childExists)
-        return Forbid(); // или BadRequest(new { error = "Child not found or not yours" });
-
-    // 5) атомарно занимаем слот
-    var affected = await _db.AvailabilitySlots
-        .Where(s => s.Id == slot.Id && s.IsBooked == false)
-        .ExecuteUpdateAsync(setters => setters
-            .SetProperty(s => s.IsBooked, true)
-            .SetProperty(s => s.UpdatedAtUtc, now));
-
-    if (affected == 0)
-        return Conflict(new { error = "Slot already booked" });
-
-    // 6) создаём бронь
-    var booking = new Booking
+    public async Task<ActionResult<BookingResponse>> Create([FromBody] CreateBookingRequest req)
     {
-        SpecialistUserId = slot.SpecialistUserId,
-        ParentUserId = parent.Id,
-        StartsAtUtc = slot.StartsAtUtc,
-        EndsAtUtc = slot.EndsAtUtc,
-        Status = BookingStatus.Pending,
-        MessageFromParent = req.MessageFromParent,
-        AvailabilitySlotId = slot.Id,
-        ChildId = req.ChildId,
-        CreatedAtUtc = now,
-        UpdatedAtUtc = now
-    };
+        var parent = await _userManager.GetUserAsync(User);
+        if (parent is null) return Unauthorized();
 
-    _db.Bookings.Add(booking);
-    await _db.SaveChangesAsync();
-    await tx.CommitAsync();
+        var now = DateTime.UtcNow;
 
-    return Ok(new BookingResponse(
-        booking.Id, booking.SpecialistUserId, booking.ParentUserId,
-        booking.StartsAtUtc, booking.EndsAtUtc, booking.Status, booking.MessageFromParent,
-        booking.AvailabilitySlotId, booking.ChildId,
-        booking.CreatedAtUtc, booking.UpdatedAtUtc));
-}
+        await using var tx = await _db.Database.BeginTransactionAsync();
 
+        // 1) слот
+        var slot = await _db.AvailabilitySlots
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == req.AvailabilitySlotId);
+
+        if (slot is null)
+            return NotFound(new { error = "Slot not found" });
+
+        // 2) профиль специалиста одобрен
+        var isApproved = await _db.SpecialistProfiles
+            .AsNoTracking()
+            .AnyAsync(p => p.UserId == slot.SpecialistUserId &&
+                           p.Status == ModerationStatus.Approved);
+
+        if (!isApproved)
+            return BadRequest(new { error = "Specialist is not available for booking (profile not approved)" });
+
+        // 3) нельзя в прошлое
+        if (slot.StartsAtUtc < now)
+            return BadRequest(new { error = "Cannot book a past slot" });
+
+        // 4) ребёнок принадлежит текущему родителю
+        var childIsMine = await _db.Children
+            .Where(c => c.Id == req.ChildId)
+            .Select(c => c.ParentProfile!.UserId)
+            .FirstOrDefaultAsync();
+
+        if (childIsMine is null)
+            return NotFound(new { error = "Child not found" });
+
+        if (childIsMine != parent.Id)
+            return Forbid();
+
+        // 5) атомарно занимаем слот
+        var affected = await _db.AvailabilitySlots
+            .Where(s => s.Id == slot.Id && s.IsBooked == false)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(s => s.IsBooked, true)
+                .SetProperty(s => s.UpdatedAtUtc, now));
+
+        if (affected == 0)
+            return Conflict(new { error = "Slot already booked" });
+
+        // 6) создаём бронь
+        var booking = new Booking
+        {
+            SpecialistUserId = slot.SpecialistUserId,
+            ParentUserId = parent.Id,
+            StartsAtUtc = slot.StartsAtUtc,
+            EndsAtUtc = slot.EndsAtUtc,
+            Status = BookingStatus.Pending,
+            MessageFromParent = req.MessageFromParent,
+            AvailabilitySlotId = slot.Id,
+            ChildId = req.ChildId,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        };
+
+        _db.Bookings.Add(booking);
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        // Можно вернуть 200 OK (как сейчас) или 201 Created с Location
+        return Ok(new BookingResponse(
+            booking.Id, booking.SpecialistUserId, booking.ParentUserId,
+            booking.StartsAtUtc, booking.EndsAtUtc, booking.Status,
+            booking.MessageFromParent, booking.AvailabilitySlotId, booking.ChildId,
+            booking.CreatedAtUtc, booking.UpdatedAtUtc));
+    }
 
     /// <summary>
-    /// Список моих броней родителя с фильтрами (опц.).
+    /// Список моих бронирований (родителя) с опциональными фильтрами.
     /// </summary>
     [HttpGet]
+    [SwaggerOperation("Список бронирований родителя")]
+    [ProducesResponseType(typeof(IEnumerable<BookingResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<IEnumerable<BookingResponse>>> MyBookings(
         [FromQuery] BookingStatus? status,
         [FromQuery] DateTime? fromUtc,
@@ -124,7 +155,7 @@ public async Task<ActionResult<BookingResponse>> Create(CreateBookingRequest req
 
         var list = await q
             .OrderByDescending(b => b.StartsAtUtc)
-            .Select(b => ToResponse(b))
+            .Select(BookingToResponse)
             .AsNoTracking()
             .ToListAsync();
 
@@ -132,9 +163,14 @@ public async Task<ActionResult<BookingResponse>> Create(CreateBookingRequest req
     }
 
     /// <summary>
-    /// Отмена родителем. Освобождает слот, если он ещё помечен как занятый и время в будущем.
+    /// Отмена бронирования родителем.
+    /// Освобождает слот (если встреча в будущем и слот всё ещё помечен как занятый).
     /// </summary>
     [HttpPost("{id:guid}/cancel")]
+    [SwaggerOperation( "Отменить бронирование родителем")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Cancel(Guid id)
     {
         var parent = await _userManager.GetUserAsync(User);
@@ -149,7 +185,7 @@ public async Task<ActionResult<BookingResponse>> Create(CreateBookingRequest req
         booking.Status = BookingStatus.CancelledByParent;
         booking.UpdatedAtUtc = DateTime.UtcNow;
 
-        // Освобождаем слот, если он ещё актуален
+        // Освободить слот, если встреча в будущем
         if (booking.AvailabilitySlotId is Guid slotId && booking.StartsAtUtc > DateTime.UtcNow)
         {
             await _db.AvailabilitySlots
@@ -162,7 +198,4 @@ public async Task<ActionResult<BookingResponse>> Create(CreateBookingRequest req
         await _db.SaveChangesAsync();
         return NoContent();
     }
-
-    private static BookingResponse ToResponse(Booking b) =>
-        new(b.Id, b.SpecialistUserId, b.ParentUserId, b.StartsAtUtc, b.EndsAtUtc, b.Status, b.MessageFromParent,b.ChildId, b.AvailabilitySlotId, b.CreatedAtUtc, b.UpdatedAtUtc);
 }
