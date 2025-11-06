@@ -198,4 +198,43 @@ public class ParentBookingsController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+    [HttpGet("{id:guid}/outcome")]
+    public async Task<ActionResult<BookingOutcomeResponse>> GetOutcome(Guid id)
+    {
+        var parent = await _userManager.GetUserAsync(User);
+        if (parent is null) return Unauthorized();
+
+        var b = await _db.Bookings
+            .AsNoTracking()
+            .Include(x => x.Outcome)
+            .FirstOrDefaultAsync(x => x.Id == id && x.ParentUserId == parent.Id);
+
+        if (b is null) return NotFound();
+
+        if (b.Outcome is null) return NotFound(new { error = "Outcome not created yet" });
+
+        return Ok(new BookingOutcomeResponse(
+            b.Id, b.Outcome.Summary ?? "",
+            b.Outcome.Recommendations, b.Outcome.NextSteps,
+            b.Outcome.CreatedAtUtc, b.Outcome.ParentAcknowledgedAtUtc));
+    }
+
+    /// <summary>Пометить заключение как прочитанное родителем</summary>
+    [HttpPost("{id:guid}/outcome/ack")]
+    public async Task<IActionResult> AcknowledgeOutcome(Guid id)
+    {
+        var parent = await _userManager.GetUserAsync(User);
+        if (parent is null) return Unauthorized();
+
+        var outcome = await _db.BookingOutcomes
+            .FirstOrDefaultAsync(o => o.BookingId == id && o.ParentUserId == parent.Id);
+
+        if (outcome is null) return NotFound();
+
+        outcome.ParentAcknowledgedAtUtc = DateTime.UtcNow;
+        outcome.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
 }

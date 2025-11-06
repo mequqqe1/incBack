@@ -6,5 +6,6 @@ public enum BookingStatus
     Confirmed = 1,
     Declined = 2,
     CancelledByParent = 3,
-    CancelledBySpecialist = 4
+    CancelledBySpecialist = 4,
+    Completed = 5               // NEW: встреча завершена, есть заключение
 }

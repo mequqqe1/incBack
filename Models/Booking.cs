@@ -26,7 +26,9 @@ public class Booking
     public Guid? ChildId { get; set; }
     
     public Child? Child { get; set; }
+    public BookingOutcome? Outcome { get; set; } // NEW: навигация 1:1
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+    
 }

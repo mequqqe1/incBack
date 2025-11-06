@@ -104,4 +104,81 @@ public class SpecialistBookingsController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+    [HttpPost("{id:guid}/close")]
+    public async Task<IActionResult> Close(Guid id, [FromBody] CloseBookingRequest req)
+    {
+        var spec = await _userManager.GetUserAsync(User);
+        if (spec is null) return Unauthorized();
+
+        var booking = await _db.Bookings
+            .Include(b => b.Outcome)
+            .FirstOrDefaultAsync(b => b.Id == id && b.SpecialistUserId == spec.Id);
+
+        if (booking is null) return NotFound(new { error = "Booking not found" });
+
+        if (booking.Status != BookingStatus.Confirmed)
+            return BadRequest(new { error = "Only confirmed bookings can be closed" });
+
+        // (опционально) запрет закрытия до конца слота
+        // if (booking.EndsAtUtc > DateTime.UtcNow)
+        //     return BadRequest(new { error = "Cannot close before session ends" });
+
+        var now = DateTime.UtcNow;
+        if (booking.Outcome is null)
+        {
+            booking.Outcome = new BookingOutcome
+            {
+                BookingId = booking.Id,
+                SpecialistUserId = booking.SpecialistUserId,
+                ParentUserId = booking.ParentUserId,
+                Summary = req.Summary,
+                Recommendations = req.Recommendations,
+                NextSteps = req.NextSteps,
+                SpecialistPrivateNotes = req.SpecialistPrivateNotes,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            };
+            _db.BookingOutcomes.Add(booking.Outcome);
+        }
+        else
+        {
+            booking.Outcome.Summary = req.Summary;
+            booking.Outcome.Recommendations = req.Recommendations;
+            booking.Outcome.NextSteps = req.NextSteps;
+            booking.Outcome.SpecialistPrivateNotes = req.SpecialistPrivateNotes;
+            booking.Outcome.UpdatedAtUtc = now;
+        }
+
+        booking.Status = BookingStatus.Completed;
+        booking.UpdatedAtUtc = now;
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+    
+    /// <summary>Детали брони с Outcome (для специалиста)</summary>
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<BookingDetailsResponse>> GetDetails(Guid id)
+    {
+        var spec = await _userManager.GetUserAsync(User);
+        if (spec is null) return Unauthorized();
+
+        var b = await _db.Bookings
+            .AsNoTracking()
+            .Include(x => x.Outcome)
+            .FirstOrDefaultAsync(x => x.Id == id && x.SpecialistUserId == spec.Id);
+
+        if (b is null) return NotFound();
+
+        BookingOutcomeResponse? outcome = b.Outcome is null ? null :
+            new BookingOutcomeResponse(b.Id, b.Outcome.Summary ?? "",
+                b.Outcome.Recommendations, b.Outcome.NextSteps,
+                b.Outcome.CreatedAtUtc, b.Outcome.ParentAcknowledgedAtUtc);
+
+        return Ok(new BookingDetailsResponse(
+            b.Id, b.SpecialistUserId, b.ParentUserId, b.StartsAtUtc, b.EndsAtUtc,
+            b.Status, b.MessageFromParent, b.AvailabilitySlotId, b.ChildId,
+            b.CreatedAtUtc, b.UpdatedAtUtc, outcome));
+    }
+
 }

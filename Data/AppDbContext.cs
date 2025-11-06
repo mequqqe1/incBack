@@ -21,7 +21,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<WeeklyTemplate> WeeklyTemplates => Set<WeeklyTemplate>();
     public DbSet<WeeklyTemplateSlot> WeeklyTemplateSlots => Set<WeeklyTemplateSlot>();
-
+    public DbSet<BookingOutcome> BookingOutcomes => Set<BookingOutcome>();
     // Новые
     public DbSet<ParentProfile> ParentProfiles => Set<ParentProfile>();
     public DbSet<Child> Children => Set<Child>();
@@ -180,6 +180,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
              .HasForeignKey(m => m.UserId)
              .OnDelete(DeleteBehavior.SetNull);
         });
+        builder.Entity<Booking>()
+            .HasOne(x => x.Outcome)
+            .WithOne(x => x.Booking)
+            .HasForeignKey<BookingOutcome>(x => x.BookingId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BookingOutcome>()
+            .HasIndex(x => x.BookingId)
+            .IsUnique();
 
         builder.Entity<ChildDocument>(e =>
         {
