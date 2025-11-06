@@ -1,6 +1,8 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿// Models/Booking.cs
 
-namespace SharpAuthDemo.Models;
+using System.ComponentModel.DataAnnotations;
+using INCBack.Models;
+using SharpAuthDemo.Models;
 
 public class Booking
 {
@@ -17,8 +19,13 @@ public class Booking
     [MaxLength(1000)]
     public string? MessageFromParent { get; set; }
 
-    public Guid? AvailabilitySlotId { get; set; } // если бронь создана на базовый слот
+    public Guid? AvailabilitySlotId { get; set; }
     public AvailabilitySlot? AvailabilitySlot { get; set; }
+
+    // NEW: ссылка на ребёнка
+    public Guid? ChildId { get; set; }
+    
+    public Child? Child { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;

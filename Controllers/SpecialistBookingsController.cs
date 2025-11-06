@@ -43,7 +43,9 @@ public class SpecialistBookingsController : ControllerBase
         var list = await q
             .OrderByDescending(b => b.StartsAtUtc)
             .Select(b => new BookingResponse(
-                b.Id, b.SpecialistUserId, b.ParentUserId, b.StartsAtUtc, b.EndsAtUtc, b.Status, b.MessageFromParent, b.AvailabilitySlotId, b.CreatedAtUtc, b.UpdatedAtUtc))
+                b.Id, b.SpecialistUserId, b.ParentUserId, b.StartsAtUtc, b.EndsAtUtc,
+                b.Status, b.MessageFromParent, b.AvailabilitySlotId, b.ChildId, b.CreatedAtUtc, b.UpdatedAtUtc))
+
             .AsNoTracking()
             .ToListAsync();
 

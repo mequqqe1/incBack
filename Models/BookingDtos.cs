@@ -23,9 +23,11 @@ public record AvailabilitySlotResponse(
 );
 
 public record CreateBookingRequest(
-    [param: Required] Guid AvailabilitySlotId,
+    Guid AvailabilitySlotId,
+    Guid ChildId,                 // NEW: требуем ребёнка
     string? MessageFromParent
 );
+
 
 public record BookingResponse(
     Guid Id,
@@ -36,6 +38,7 @@ public record BookingResponse(
     BookingStatus Status,
     string? MessageFromParent,
     Guid? AvailabilitySlotId,
+    Guid? ChildId,               // NEW: отдаём тоже
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc
 );

@@ -22,6 +22,61 @@ namespace INCBack.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Booking", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AvailabilitySlotId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ChildId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("EndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MessageFromParent")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ParentUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SpecialistUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("StartsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AvailabilitySlotId");
+
+                    b.HasIndex("ChildId");
+
+                    b.HasIndex("ParentUserId", "StartsAtUtc");
+
+                    b.HasIndex("SpecialistUserId", "StartsAtUtc");
+
+                    b.ToTable("bookings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Booking_Time", "\"EndsAtUtc\" > \"StartsAtUtc\"");
+                        });
+                });
+
             modelBuilder.Entity("INCBack.Models.ApplicationUser", b =>
                 {
                     b.Property<string>("Id")
@@ -510,56 +565,6 @@ namespace INCBack.Data.Migrations
                         });
                 });
 
-            modelBuilder.Entity("SharpAuthDemo.Models.Booking", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AvailabilitySlotId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("EndsAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("MessageFromParent")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("ParentUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("SpecialistUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("StartsAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AvailabilitySlotId");
-
-                    b.HasIndex("ParentUserId", "StartsAtUtc");
-
-                    b.HasIndex("SpecialistUserId", "StartsAtUtc");
-
-                    b.ToTable("bookings", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_Booking_Time", "\"EndsAtUtc\" > \"StartsAtUtc\"");
-                        });
-                });
-
             modelBuilder.Entity("SharpAuthDemo.Models.Skill", b =>
                 {
                     b.Property<int>("Id")
@@ -858,6 +863,22 @@ namespace INCBack.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Booking", b =>
+                {
+                    b.HasOne("SharpAuthDemo.Models.AvailabilitySlot", "AvailabilitySlot")
+                        .WithMany()
+                        .HasForeignKey("AvailabilitySlotId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("INCBack.Models.Child", "Child")
+                        .WithMany()
+                        .HasForeignKey("ChildId");
+
+                    b.Navigation("AvailabilitySlot");
+
+                    b.Navigation("Child");
+                });
+
             modelBuilder.Entity("INCBack.Models.CaregiverMember", b =>
                 {
                     b.HasOne("INCBack.Models.ParentProfile", "ParentProfile")
@@ -977,16 +998,6 @@ namespace INCBack.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("SharpAuthDemo.Models.Booking", b =>
-                {
-                    b.HasOne("SharpAuthDemo.Models.AvailabilitySlot", "AvailabilitySlot")
-                        .WithMany()
-                        .HasForeignKey("AvailabilitySlotId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AvailabilitySlot");
                 });
 
             modelBuilder.Entity("SharpAuthDemo.Models.SpecialistDiploma", b =>
