@@ -3,6 +3,7 @@
 using System.ComponentModel.DataAnnotations;
 using INCBack.Models;
 using SharpAuthDemo.Models;
+using INCBack.Models;
 
 public class Booking
 {
@@ -30,5 +31,6 @@ public class Booking
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+    public SpecialistReview? Review { get; set; } // ← навигация на отзыв (1:1)
     
 }

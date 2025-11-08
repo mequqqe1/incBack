@@ -55,6 +55,9 @@ public class SpecialistProfile
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+    
+    public double AverageRating { get; set; }      // 0..5
+    public int ReviewsCount { get; set; }
 
     public List<SpecialistDiploma> Diplomas { get; set; } = new();
     public List<SpecialistSpecialization> SpecialistSpecializations { get; set; } = new();

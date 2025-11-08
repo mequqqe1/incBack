@@ -73,3 +73,21 @@ public record SetSpecializationsRequest([param: Required] int[] SpecializationId
 public record SetSkillsRequest([param: Required] int[] SkillIds);
 
 public record LookupItem(int Id, string Name, string? Description, int SortOrder, bool IsActive);
+
+public record ReviewCreateDto(
+    Guid? BookingId,
+    int Rating,
+    string? Comment,
+    bool IsAnonymous = false
+);
+
+public record ReviewVm(
+    Guid Id,
+    int Rating,
+    string? Comment,
+    string AuthorName,     // «Аноним» если IsAnonymous
+    DateTime CreatedAtUtc
+);
+
+public record ReviewsSummaryVm(double average, int count, IReadOnlyList<ReviewVm> items);
+

@@ -28,6 +28,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
     public DbSet<ChildNote> ChildNotes => Set<ChildNote>();
     public DbSet<CaregiverMember> CaregiverMembers => Set<CaregiverMember>();
     public DbSet<ChildDocument> ChildDocuments => Set<ChildDocument>();
+    public DbSet<SpecialistReview> SpecialistReviews => Set<SpecialistReview>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -202,5 +203,18 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
              .HasForeignKey(d => d.ChildId)
              .OnDelete(DeleteBehavior.Cascade);
         });
+        builder.Entity<SpecialistReview>(e =>
+        {
+            e.ToTable("specialist_reviews");
+            e.HasIndex(x => new { x.SpecialistUserId, x.CreatedAtUtc });
+            e.HasIndex(x => x.BookingId).IsUnique(false);
+            e.HasCheckConstraint("CK_Review_Rating", "\"Rating\" BETWEEN 1 AND 5");
+
+            e.HasOne(x => x.Booking)
+                .WithOne(bk => bk.Review)            // ← теперь свойство существует
+                .HasForeignKey<SpecialistReview>(x => x.BookingId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+        
     }
 }
