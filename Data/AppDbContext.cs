@@ -1,5 +1,6 @@
 ﻿// Data/AppDbContext.cs
 using INCBack.Models;
+using INCBack.Models.Tracker;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +30,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
     public DbSet<CaregiverMember> CaregiverMembers => Set<CaregiverMember>();
     public DbSet<ChildDocument> ChildDocuments => Set<ChildDocument>();
     public DbSet<SpecialistReview> SpecialistReviews => Set<SpecialistReview>();
+    public DbSet<INCBack.Models.Tracker.DailyEntry> DailyEntries => Set<INCBack.Models.Tracker.DailyEntry>();
+    public DbSet<INCBack.Models.Tracker.DailyIncident> DailyIncidents => Set<INCBack.Models.Tracker.DailyIncident>();
+    public DbSet<INCBack.Models.Tracker.DailyMedIntake> DailyMedIntakes => Set<INCBack.Models.Tracker.DailyMedIntake>();
+    public DbSet<INCBack.Models.Tracker.DailySession> DailySessions => Set<INCBack.Models.Tracker.DailySession>();
+
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -215,6 +221,55 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
                 .HasForeignKey<SpecialistReview>(x => x.BookingId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
-        
+        builder.Entity<DailyEntry>(e =>
+        {
+            e.ToTable("daily_entries");
+            e.HasIndex(x => new { x.ChildId, x.Date }).IsUnique();
+            // Конверсия DateOnly → date
+            e.Property(x => x.Date).HasConversion(
+                v => v.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                v => DateOnly.FromDateTime(DateTime.SpecifyKind(v, DateTimeKind.Utc))
+            ).HasColumnType("date");
+
+            // JSON-поля
+            e.Property(x => x.TriggersJson).HasColumnType("text");
+            e.Property(x => x.EnvironmentChangesJson).HasColumnType("text");
+        });
+
+        builder.Entity<DailyIncident>(e =>
+        {
+            e.ToTable("daily_incidents");
+            e.HasIndex(x => x.DailyEntryId);
+            e.Property(x => x.AntecedentJson).HasColumnType("text");
+            e.Property(x => x.BehaviorJson).HasColumnType("text");
+            e.Property(x => x.ConsequenceJson).HasColumnType("text");
+            e.HasOne(x => x.DailyEntry)
+                .WithMany(d => d.Incidents)
+                .HasForeignKey(x => x.DailyEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<DailyMedIntake>(e =>
+        {
+            e.ToTable("daily_med_intakes");
+            e.HasIndex(x => x.DailyEntryId);
+            e.Property(x => x.SideEffectsJson).HasColumnType("text");
+            e.HasOne(x => x.DailyEntry)
+                .WithMany(d => d.MedIntakes)
+                .HasForeignKey(x => x.DailyEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<DailySession>(e =>
+        {
+            e.ToTable("daily_sessions");
+            e.HasIndex(x => x.DailyEntryId);
+            e.Property(x => x.GoalTagsJson).HasColumnType("text");
+            e.HasOne(x => x.DailyEntry)
+                .WithMany(d => d.Sessions)
+                .HasForeignKey(x => x.DailyEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.CreatedAtUtc); // опционально
+        });
     }
 }
