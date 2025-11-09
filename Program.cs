@@ -124,7 +124,13 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 });
-builder.Services.AddScoped<ProfileAccessService>();
+builder.Services.Configure<OpenAIOptions>(builder.Configuration.GetSection("OpenAI"));
+builder.Services.AddHttpClient();
+builder.Services.AddSignalR();
+
+builder.Services.AddScoped<IZeynAIService, ZeynAIService>();
+builder.Services.AddScoped<IZeynAIAccess, ZeynAIAccess>();
+
 
 var app = builder.Build();
 
@@ -149,6 +155,7 @@ else
     // ✅ Только в продакшене
     app.UseHttpsRedirection();
 }
+app.MapHub<ZeynAIHub>("/hubs/zeynai");
 
 app.UseCors(corsPolicy);
 app.UseAuthentication();

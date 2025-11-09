@@ -1,6 +1,7 @@
 ﻿// Data/AppDbContext.cs
 using INCBack.Models;
 using INCBack.Models.Tracker;
+using INCBack.Models.ZeynAI;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -34,7 +35,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
     public DbSet<INCBack.Models.Tracker.DailyIncident> DailyIncidents => Set<INCBack.Models.Tracker.DailyIncident>();
     public DbSet<INCBack.Models.Tracker.DailyMedIntake> DailyMedIntakes => Set<INCBack.Models.Tracker.DailyMedIntake>();
     public DbSet<INCBack.Models.Tracker.DailySession> DailySessions => Set<INCBack.Models.Tracker.DailySession>();
-
+    public DbSet<AIConversation> AIConversations => Set<AIConversation>();
+    public DbSet<AIMessage> AIMessages => Set<AIMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -270,6 +272,23 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
                 .HasForeignKey(x => x.DailyEntryId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.CreatedAtUtc); // опционально
+        });
+        builder.Entity<AIConversation>(e =>
+        {
+            e.ToTable("ai_conversations");
+            e.HasIndex(x => new { x.ParentUserId, x.ChildId, x.Archived });
+            e.HasMany(x => x.Messages)
+                .WithOne(m => m.Conversation)
+                .HasForeignKey(m => m.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AIMessage>(e =>
+        {
+            e.ToTable("ai_messages");
+            e.HasIndex(x => new { x.ConversationId, x.CreatedAtUtc });
+            e.Property(x => x.Role).HasConversion<int>();
+            e.Property(x => x.Content).HasColumnType("text");
         });
     }
 }

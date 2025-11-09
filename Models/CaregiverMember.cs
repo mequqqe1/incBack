@@ -1,7 +1,7 @@
 // Models/CaregiverMember.cs
 namespace INCBack.Models;
 
-public enum CaregiverStatus { Pending = 0, Active = 1, Revoked = 2 }
+public enum CaregiverStatus { Pending = 0, Active = 1, Revoked = 2,Accepted = 4 }
 
 public class CaregiverMember
 {
@@ -23,3 +23,4 @@ public class CaregiverMember
     public DateTime? AcceptedAtUtc { get; set; }
     public DateTime? RevokedAtUtc { get; set; }
 }
+

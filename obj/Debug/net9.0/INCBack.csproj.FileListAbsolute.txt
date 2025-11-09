@@ -456,3 +456,4 @@ C:\Users\daule\RiderProjects\INCBack\INCBack\obj\Debug\net9.0\refint\INCBack.dll
 C:\Users\daule\RiderProjects\INCBack\INCBack\obj\Debug\net9.0\INCBack.pdb
 C:\Users\daule\RiderProjects\INCBack\INCBack\obj\Debug\net9.0\INCBack.genruntimeconfig.cache
 C:\Users\daule\RiderProjects\INCBack\INCBack\obj\Debug\net9.0\ref\INCBack.dll
+C:\Users\daule\RiderProjects\INCBack\INCBack\bin\Debug\net9.0\System.Net.WebSockets.WebSocketProtocol.dll
