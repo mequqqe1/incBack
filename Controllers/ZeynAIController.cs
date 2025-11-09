@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SharpAuthDemo.Data;
+using System.Security.Claims;
 
 [ApiController]
 [Route("api/zeynai")]
@@ -12,27 +13,44 @@ public class ZeynAIConversationsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IZeynAIService _svc;
-    public ZeynAIConversationsController(AppDbContext db, IZeynAIService svc) { _db = db; _svc = svc; }
+
+    public ZeynAIConversationsController(AppDbContext db, IZeynAIService svc)
+    {
+        _db = db;
+        _svc = svc;
+    }
+
+    // Унифицированное извлечение userId
+    private string? GetUserId() =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+        User.FindFirstValue("sub");
 
     // Список бесед (неархив)
     [HttpGet("conversations")]
     public async Task<IActionResult> List(CancellationToken ct)
     {
-        var userId = User.FindFirst("sub")!.Value;
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
         var items = await _db.AIConversations
+            .AsNoTracking()
             .Where(c => c.ParentUserId == userId && !c.Archived)
             .OrderByDescending(c => c.UpdatedAtUtc)
             .Select(c => new { c.Id, c.ChildId, c.Title, c.TurnCount, c.UpdatedAtUtc })
             .ToListAsync(ct);
+
         return Ok(items);
     }
 
     // Создать (или получить активную) для ребёнка
     public record CreateReq(Guid ChildId, string? Title);
+
     [HttpPost("conversations")]
     public async Task<IActionResult> Create([FromBody] CreateReq req, CancellationToken ct)
     {
-        var userId = User.FindFirst("sub")!.Value;
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
         var id = await _svc.CreateOrGetConversationAsync(userId, req.ChildId, req.Title, ct);
         return Ok(new { id });
     }
@@ -41,11 +59,21 @@ public class ZeynAIConversationsController : ControllerBase
     [HttpGet("conversations/{conversationId:guid}/messages")]
     public async Task<IActionResult> Messages(Guid conversationId, int skip = 0, int take = 50, CancellationToken ct = default)
     {
-        var userId = User.FindFirst("sub")!.Value;
-        var conv = await _db.AIConversations.SingleOrDefaultAsync(c => c.Id == conversationId, ct);
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var conv = await _db.AIConversations
+            .AsNoTracking()
+            .SingleOrDefaultAsync(c => c.Id == conversationId, ct);
+
         if (conv == null || conv.ParentUserId != userId) return NotFound();
 
+        // легкая нормализация пагинации
+        if (skip < 0) skip = 0;
+        if (take <= 0 || take > 200) take = 50;
+
         var msgs = await _db.AIMessages
+            .AsNoTracking()
             .Where(m => m.ConversationId == conversationId)
             .OrderBy(m => m.CreatedAtUtc)
             .Skip(skip).Take(take)
@@ -57,25 +85,39 @@ public class ZeynAIConversationsController : ControllerBase
 
     // Отправить сообщение пользователя и запустить стрим
     public record UserMsgReq(string Message);
+
     [HttpPost("conversations/{conversationId:guid}/send")]
     public async Task<IActionResult> Send(Guid conversationId, [FromBody] UserMsgReq req, CancellationToken ct)
     {
-        var userId = User.FindFirst("sub")!.Value;
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        // проверим, что беседа принадлежит пользователю
+        var convExists = await _db.AIConversations
+            .AsNoTracking()
+            .AnyAsync(c => c.Id == conversationId && c.ParentUserId == userId, ct);
+
+        if (!convExists) return NotFound();
+
         await _svc.RunChatAsync(conversationId, userId, req.Message, ct);
         return Accepted();
     }
 
     // Архивирование / переименование
     public record PatchReq(string? Title, bool? Archived);
+
     [HttpPatch("conversations/{conversationId:guid}")]
     public async Task<IActionResult> Patch(Guid conversationId, [FromBody] PatchReq req, CancellationToken ct)
     {
-        var userId = User.FindFirst("sub")!.Value;
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
         var conv = await _db.AIConversations.SingleOrDefaultAsync(c => c.Id == conversationId, ct);
         if (conv == null || conv.ParentUserId != userId) return NotFound();
 
         if (req.Title != null) conv.Title = req.Title;
         if (req.Archived.HasValue) conv.Archived = req.Archived.Value;
+
         conv.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return NoContent();
