@@ -132,6 +132,7 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<ProfileAccessService>();
 builder.Services.AddScoped<IZeynAIService, ZeynAIService>();
 builder.Services.AddScoped<IZeynAIAccess, ZeynAIAccess>();
+Console.WriteLine("OPENAI KEY: " + builder.Configuration["OpenAI:ApiKey"]);
 
 
 var app = builder.Build();
