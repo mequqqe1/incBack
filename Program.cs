@@ -129,7 +129,7 @@ builder.Services.Configure<OpenAIOptions>(
 
 builder.Services.AddHttpClient();
 builder.Services.AddSignalR();
-
+builder.Services.AddScoped<ProfileAccessService>();
 builder.Services.AddScoped<IZeynAIService, ZeynAIService>();
 builder.Services.AddScoped<IZeynAIAccess, ZeynAIAccess>();
 
