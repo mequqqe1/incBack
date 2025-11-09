@@ -1,0 +1,12 @@
+﻿bin/
+obj/
+*.user
+*.swp
+*.suo
+*.tmp
+.vscode/
+.idea/
+
+# локальные конфиги — не коммитим
+appsettings.Development.json
+appsettings.Local.json

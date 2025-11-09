@@ -124,7 +124,9 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 });
-builder.Services.Configure<OpenAIOptions>(builder.Configuration.GetSection("OpenAI"));
+builder.Services.Configure<OpenAIOptions>(
+    builder.Configuration.GetSection("OpenAI"));
+
 builder.Services.AddHttpClient();
 builder.Services.AddSignalR();
 
