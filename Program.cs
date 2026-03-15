@@ -145,17 +145,16 @@ using (var scope = app.Services.CreateScope())
     await SeedData.EnsureSeededAsync(app.Services);
 }
 
+app.UseSwagger();
+app.UseSwaggerUI();
+
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-
     // ❌ Отключаем редирект в dev, иначе preflight ломается
     // app.UseHttpsRedirection();
 }
 else
 {
-    // ✅ Только в продакшене
     app.UseHttpsRedirection();
 }
 app.MapHub<ZeynAIHub>("/hubs/zeynai");
