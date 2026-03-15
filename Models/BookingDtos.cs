@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace SharpAuthDemo.Models;
 
@@ -24,8 +24,9 @@ public record AvailabilitySlotResponse(
 
 public record CreateBookingRequest(
     Guid AvailabilitySlotId,
-    Guid ChildId,                 // NEW: требуем ребёнка
-    string? MessageFromParent
+    Guid ChildId,
+    string? MessageFromParent,
+    Guid? AssignedCaregiverMemberId = null  // кто ведёт на встречу (семейный календарь)
 );
 
 
@@ -38,7 +39,8 @@ public record BookingResponse(
     BookingStatus Status,
     string? MessageFromParent,
     Guid? AvailabilitySlotId,
-    Guid? ChildId,               // NEW: отдаём тоже
+    Guid? ChildId,
+    Guid? AssignedCaregiverMemberId,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc
 );

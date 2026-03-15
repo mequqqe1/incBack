@@ -18,21 +18,11 @@ public class ChildrenController : ControllerBase
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ProfileAccessService _access;
+    private readonly IFamilyContextService _familyContext;
 
-    public ChildrenController(AppDbContext db, UserManager<ApplicationUser> userManager, ProfileAccessService access)
+    public ChildrenController(AppDbContext db, UserManager<ApplicationUser> userManager, ProfileAccessService access, IFamilyContextService familyContext)
     {
-        _db = db; _userManager = userManager; _access = access;
-    }
-
-    private async Task<ParentProfile> GetOrCreateOwnProfile(ApplicationUser user)
-    {
-        var p = await _db.ParentProfiles.FirstOrDefaultAsync(x => x.UserId == user.Id);
-        if (p is not null) return p;
-
-        p = new ParentProfile { UserId = user.Id, CreatedAtUtc = DateTime.UtcNow };
-        _db.ParentProfiles.Add(p);
-        await _db.SaveChangesAsync();
-        return p;
+        _db = db; _userManager = userManager; _access = access; _familyContext = familyContext;
     }
 
     [HttpGet]
@@ -63,12 +53,12 @@ public class ChildrenController : ControllerBase
         var me = await _userManager.GetUserAsync(User);
         if (me is null) return Unauthorized();
 
-        // создаём ребёнка в своём собственном профиле (владельца)
-        var profile = await GetOrCreateOwnProfile(me);
+        var family = await _familyContext.GetCurrentFamilyAsync(me.Id);
+        if (family is null) return NotFound(new { error = "No family. Create profile or accept invite." });
 
         var entity = new Child
         {
-            ParentProfileId = profile.Id,
+            ParentProfileId = family.ParentProfileId,
             FirstName = req.FirstName,
             LastName = req.LastName,
             BirthDate = req.BirthDate,

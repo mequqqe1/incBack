@@ -1,4 +1,4 @@
-﻿// Models/Booking.cs
+// Models/Booking.cs
 
 using System.ComponentModel.DataAnnotations;
 using INCBack.Models;
@@ -25,8 +25,11 @@ public class Booking
 
     // NEW: ссылка на ребёнка
     public Guid? ChildId { get; set; }
-    
     public Child? Child { get; set; }
+
+    /// <summary>Кто из опекунов ведёт на встречу (для семейного календаря).</summary>
+    public Guid? AssignedCaregiverMemberId { get; set; }
+    public CaregiverMember? AssignedCaregiverMember { get; set; }
     public BookingOutcome? Outcome { get; set; } // NEW: навигация 1:1
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

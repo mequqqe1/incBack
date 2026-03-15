@@ -1,4 +1,4 @@
-﻿// Services/ZeynAIService.cs
+// Services/ZeynAIService.cs
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -178,9 +178,13 @@ public class ZeynAIService : IZeynAIService
 
     private async Task<string> StreamFromOpenAIAsync(Guid conversationId, string systemPrompt, List<object> messages, CancellationToken ct)
     {
+        var apiKey = _opt?.ApiKey?.Trim();
+        if (string.IsNullOrEmpty(apiKey))
+            throw new InvalidOperationException("OpenAI API key is not configured. Set OpenAI:ApiKey in appsettings or OpenAI__ApiKey environment variable.");
+
         using var client = _http.CreateClient();
         client.BaseAddress = new Uri("https://api.openai.com");
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _opt.ApiKey);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
         var body = new
         {
@@ -196,6 +200,8 @@ public class ZeynAIService : IZeynAIService
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
         var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            throw new InvalidOperationException("OpenAI API key is invalid or expired. Check OpenAI:ApiKey or OpenAI__ApiKey.");
         resp.EnsureSuccessStatusCode();
 
         var group = ZeynAIHub.GroupName(conversationId);

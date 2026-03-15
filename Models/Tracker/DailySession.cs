@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace INCBack.Models.Tracker;
 
@@ -15,7 +15,8 @@ public class DailySession
     public string? GoalTagsJson { get; set; }
     [MaxLength(600)] public string? Notes { get; set; }
 
-    // ↓↓↓ добавь одно из двух (или оба)
-    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow; // дефолт — по времени создания
-    // public DateTime? TimeUtc { get; set; }                        // если хочешь явное время проведения
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Кто внёс сессию (UserId опекуна или родителя) — для семейного календаря.</summary>
+    public string? RecordedByUserId { get; set; }
 }

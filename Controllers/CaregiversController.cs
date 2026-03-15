@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SharpAuthDemo.Contracts;
 using SharpAuthDemo.Data;
+using SharpAuthDemo.Services;
 
 namespace SharpAuthDemo.Controllers;
 
@@ -16,19 +17,10 @@ public class CaregiversController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IFamilyContextService _familyContext;
 
-    public CaregiversController(AppDbContext db, UserManager<ApplicationUser> userManager)
-    { _db = db; _userManager = userManager; }
-
-    private async Task<ParentProfile> GetOrCreateOwnProfile(ApplicationUser user)
-    {
-        var p = await _db.ParentProfiles.FirstOrDefaultAsync(x => x.UserId == user.Id);
-        if (p is not null) return p;
-        p = new ParentProfile { UserId = user.Id };
-        _db.ParentProfiles.Add(p);
-        await _db.SaveChangesAsync();
-        return p;
-    }
+    public CaregiversController(AppDbContext db, UserManager<ApplicationUser> userManager, IFamilyContextService familyContext)
+    { _db = db; _userManager = userManager; _familyContext = familyContext; }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CaregiverResponse>>> List()
@@ -36,10 +28,11 @@ public class CaregiversController : ControllerBase
         var user = await _userManager.GetUserAsync(User);
         if (user is null) return Unauthorized();
 
-        var profile = await GetOrCreateOwnProfile(user);
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return NotFound(new { error = "No family" });
 
         var items = await _db.CaregiverMembers.AsNoTracking()
-            .Where(m => m.ParentProfileId == profile.Id)
+            .Where(m => m.ParentProfileId == family.ParentProfileId)
             .OrderByDescending(m => m.IsAdmin).ThenBy(m => m.Email)
             .Select(m => new CaregiverResponse(
                 m.Id, m.Email, m.UserId, m.Relation, m.IsAdmin, m.Status, m.InvitedAtUtc, m.AcceptedAtUtc))
@@ -54,10 +47,14 @@ public class CaregiversController : ControllerBase
         var me = await _userManager.GetUserAsync(User);
         if (me is null) return Unauthorized();
 
-        var profile = await GetOrCreateOwnProfile(me);
+        if (!await _familyContext.CanManageMembersAsync(me.Id))
+            return Forbid();
+
+        var family = await _familyContext.GetCurrentFamilyAsync(me.Id);
+        if (family is null) return NotFound(new { error = "No family" });
 
         var existing = await _db.CaregiverMembers
-            .FirstOrDefaultAsync(m => m.ParentProfileId == profile.Id && m.Email == req.Email);
+            .FirstOrDefaultAsync(m => m.ParentProfileId == family.ParentProfileId && m.Email == req.Email);
         if (existing is not null)
             return Conflict(new { error = "Caregiver with this email already invited/added" });
 
@@ -66,7 +63,7 @@ public class CaregiversController : ControllerBase
 
         var member = new CaregiverMember
         {
-            ParentProfileId = profile.Id,
+            ParentProfileId = family.ParentProfileId,
             Email = req.Email,
             Relation = req.Relation,
             IsAdmin = req.IsAdmin,
@@ -95,7 +92,7 @@ public class CaregiversController : ControllerBase
             return Forbid();
 
         member.UserId = user.Id;
-        member.Status = CaregiverStatus.Active;
+        member.Status = CaregiverStatus.Accepted;
         member.AcceptedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return NoContent();
@@ -107,19 +104,17 @@ public class CaregiversController : ControllerBase
         var me = await _userManager.GetUserAsync(User);
         if (me is null) return Unauthorized();
 
+        if (!await _familyContext.CanManageMembersAsync(me.Id))
+            return Forbid();
+
         var member = await _db.CaregiverMembers
             .Include(m => m.ParentProfile)
             .FirstOrDefaultAsync(m => m.Id == memberId);
         if (member is null) return NotFound();
 
-        var isOwner = member.ParentProfile!.UserId == me.Id;
-        var iAmAdmin = await _db.CaregiverMembers.AnyAsync(m =>
-            m.ParentProfileId == member.ParentProfileId &&
-            m.UserId == me.Id &&
-            m.Status == CaregiverStatus.Active &&
-            m.IsAdmin);
-
-        if (!isOwner && !iAmAdmin) return Forbid();
+        var family = await _familyContext.GetCurrentFamilyAsync(me.Id);
+        if (family is null || family.ParentProfileId != member.ParentProfileId)
+            return Forbid();
 
         if (req.Relation is not null) member.Relation = req.Relation;
         if (req.IsAdmin.HasValue) member.IsAdmin = req.IsAdmin.Value;
@@ -142,16 +137,16 @@ public class CaregiversController : ControllerBase
         var me = await _userManager.GetUserAsync(User);
         if (me is null) return Unauthorized();
 
+        if (!await _familyContext.CanManageMembersAsync(me.Id))
+            return Forbid();
+
         var member = await _db.CaregiverMembers.Include(m => m.ParentProfile)
             .FirstOrDefaultAsync(m => m.Id == memberId);
         if (member is null) return NotFound();
 
-        var isOwner = member.ParentProfile!.UserId == me.Id;
-        var iAmAdmin = await _db.CaregiverMembers.AnyAsync(m =>
-            m.ParentProfileId == member.ParentProfileId &&
-            m.UserId == me.Id && m.Status == CaregiverStatus.Active && m.IsAdmin);
-
-        if (!isOwner && !iAmAdmin) return Forbid();
+        var family = await _familyContext.GetCurrentFamilyAsync(me.Id);
+        if (family is null || family.ParentProfileId != member.ParentProfileId)
+            return Forbid();
 
         _db.CaregiverMembers.Remove(member);
         await _db.SaveChangesAsync();

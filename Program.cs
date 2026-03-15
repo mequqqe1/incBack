@@ -20,10 +20,10 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.WebHost.ConfigureKestrel(o =>
 {
     o.ListenAnyIP(5062); // HTTP
-    o.ListenAnyIP(7216, listenOptions =>
+    if (!builder.Environment.IsDevelopment())
     {
-        listenOptions.UseHttps();
-    });
+        o.ListenAnyIP(7216, listenOptions => listenOptions.UseHttps());
+    }
     o.Limits.MaxRequestBodySize = 15 * 1024 * 1024;
 });
     
@@ -130,9 +130,11 @@ builder.Services.Configure<OpenAIOptions>(
 builder.Services.AddHttpClient();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<ProfileAccessService>();
+builder.Services.AddScoped<IFamilyContextService, FamilyContextService>();
 builder.Services.AddScoped<IZeynAIService, ZeynAIService>();
 builder.Services.AddScoped<IZeynAIAccess, ZeynAIAccess>();
-Console.WriteLine("OPENAI KEY: " + builder.Configuration["OpenAI:ApiKey"]);
+var openAiKey = builder.Configuration["OpenAI:ApiKey"];
+Console.WriteLine("OpenAI: " + (string.IsNullOrEmpty(openAiKey) ? "[not set]" : "[set]"));
 
 
 var app = builder.Build();

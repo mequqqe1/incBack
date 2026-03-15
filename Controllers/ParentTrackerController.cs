@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using INCBack.Models;
 using INCBack.Models.Tracker;
@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using SharpAuthDemo.Data;
+using SharpAuthDemo.Services;
 
 namespace INCBack.Controllers;
 
@@ -17,25 +18,29 @@ public class ParentTrackerController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _users;
+    private readonly IFamilyContextService _familyContext;
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
 
-    public ParentTrackerController(AppDbContext db, UserManager<ApplicationUser> users)
+    public ParentTrackerController(AppDbContext db, UserManager<ApplicationUser> users, IFamilyContextService familyContext)
     {
-        _db = db; _users = users;
-    }
-    
-    private async Task<ParentProfile?> GetCurrentParent()
-    {
-        var uid = _users.GetUserId(User)!;
-        return await _db.ParentProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == uid);
+        _db = db; _users = users; _familyContext = familyContext;
     }
 
-    private async Task<bool> ChildBelongsToCurrentParent(Guid childId)
+    private async Task<bool> ChildBelongsToFamily(Guid childId, Guid parentProfileId)
     {
-        var pp = await GetCurrentParent();
-        if (pp is null) return false;
         return await _db.Children.AsNoTracking()
-            .AnyAsync(c => c.Id == childId && c.ParentProfileId == pp.Id);
+            .AnyAsync(c => c.Id == childId && c.ParentProfileId == parentProfileId);
+    }
+
+    /// <returns>(family, childOk). If family is null → 404; if !childOk → 403.</returns>
+    private async Task<(FamilyContext? family, bool childOk)> GetFamilyAndCheckChildAsync(Guid childId)
+    {
+        var user = await _users.GetUserAsync(User);
+        if (user is null) return (null, false);
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return (null, false);
+        var ok = await ChildBelongsToFamily(childId, family.ParentProfileId);
+        return (family, ok);
     }
 
     // нормализуем дату: только день в UTC
@@ -145,7 +150,7 @@ public class ParentTrackerController : ControllerBase
     [HttpGet("day")]
     public async Task<ActionResult<DayVm>> GetDay(Guid childId, [FromQuery] DateTime dateUtc)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var d = DayFromUtc(dateUtc);
 
         var entry = await _db.DailyEntries
@@ -167,7 +172,7 @@ public class ParentTrackerController : ControllerBase
     [HttpGet("days")]
     public async Task<ActionResult<IEnumerable<DayMarker>>> GetDays(Guid childId, DateTime fromUtc, DateTime toUtc)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var from = DayFromUtc(fromUtc);
         var to   = DayFromUtc(toUtc);
 
@@ -183,7 +188,7 @@ public class ParentTrackerController : ControllerBase
     [HttpPost("day")]
     public async Task<IActionResult> UpsertDay(Guid childId, [FromBody] EntryUpsertDto dto)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
         var d = DayFromUtc(dto.dateUtc);
@@ -240,7 +245,7 @@ public class ParentTrackerController : ControllerBase
     [HttpPost("incidents")]
     public async Task<IActionResult> AddIncident(Guid childId, [FromQuery] DateTime dateUtc, [FromBody] IncidentDto dto)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var d = DayFromUtc(dateUtc);
 
         if (dto.intensity is < 1 or > 5) return Problem("intensity 1..5", statusCode:400);
@@ -280,7 +285,7 @@ public class ParentTrackerController : ControllerBase
     [HttpPatch("incidents/{id:guid}")]
     public async Task<IActionResult> UpdateIncident(Guid childId, Guid id, [FromBody] IncidentUpdateDto dto)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
 
         var inc = await _db.DailyIncidents
             .Include(i => i.DailyEntry)
@@ -306,7 +311,7 @@ public class ParentTrackerController : ControllerBase
     [HttpDelete("incidents/{id:guid}")]
     public async Task<IActionResult> DeleteIncident(Guid childId, Guid id)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var inc = await _db.DailyIncidents.Include(i => i.DailyEntry).FirstOrDefaultAsync(i => i.Id == id);
         if (inc is null || inc.DailyEntry is null || inc.DailyEntry.ChildId != childId) return NotFound();
 
@@ -329,7 +334,7 @@ public class ParentTrackerController : ControllerBase
     [HttpPost("med-intakes")]
     public async Task<IActionResult> AddMed(Guid childId, [FromQuery] DateTime dateUtc, [FromBody] MedIntakeDto dto)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var d = DayFromUtc(dateUtc);
 
         var e = await _db.DailyEntries.FirstOrDefaultAsync(x => x.ChildId == childId && x.Date == d)
@@ -342,7 +347,8 @@ public class ParentTrackerController : ControllerBase
             Dose = string.IsNullOrWhiteSpace(dto.dose) ? null : dto.dose.Trim(),
             TimeUtc = DateTime.SpecifyKind(dto.timeUtc, DateTimeKind.Utc),
             Taken = dto.taken,
-            SideEffectsJson = SerializeOrNull(dto.sideEffects)
+            SideEffectsJson = SerializeOrNull(dto.sideEffects),
+            RecordedByUserId = _users.GetUserId(User)
         };
 
         if (string.IsNullOrWhiteSpace(m.Drug) || m.Drug.Length > 200)
@@ -357,7 +363,7 @@ public class ParentTrackerController : ControllerBase
     [HttpPatch("med-intakes/{id:guid}")]
     public async Task<IActionResult> UpdateMed(Guid childId, Guid id, [FromBody] MedUpdateDto dto)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var m = await _db.DailyMedIntakes.Include(x => x.DailyEntry).FirstOrDefaultAsync(x => x.Id == id);
         if (m is null || m.DailyEntry is null || m.DailyEntry.ChildId != childId) return NotFound();
 
@@ -372,7 +378,7 @@ public class ParentTrackerController : ControllerBase
     [HttpDelete("med-intakes/{id:guid}")]
     public async Task<IActionResult> DeleteMed(Guid childId, Guid id)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var m = await _db.DailyMedIntakes.Include(x => x.DailyEntry).FirstOrDefaultAsync(x => x.Id == id);
         if (m is null || m.DailyEntry is null || m.DailyEntry.ChildId != childId) return NotFound();
 
@@ -386,7 +392,7 @@ public class ParentTrackerController : ControllerBase
     [HttpPost("sessions")]
     public async Task<IActionResult> AddSession(Guid childId, [FromQuery] DateTime dateUtc, [FromBody] SessionDto dto)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var d = DayFromUtc(dateUtc);
 
         if (string.IsNullOrWhiteSpace(dto.type) || dto.type.Length > 80)
@@ -406,7 +412,8 @@ public class ParentTrackerController : ControllerBase
             DurationMin = dto.durationMin,
             Quality = dto.quality,
             GoalTagsJson = SerializeOrNull(dto.goalTags),
-            Notes = string.IsNullOrWhiteSpace(dto.notes) ? null : dto.notes.Trim()
+            Notes = string.IsNullOrWhiteSpace(dto.notes) ? null : dto.notes.Trim(),
+            RecordedByUserId = _users.GetUserId(User)
         };
 
         _db.DailySessions.Add(s);
@@ -418,7 +425,7 @@ public class ParentTrackerController : ControllerBase
     [HttpPatch("sessions/{id:guid}")]
     public async Task<IActionResult> UpdateSession(Guid childId, Guid id, [FromBody] SessionUpdateDto dto)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var s = await _db.DailySessions.Include(x => x.DailyEntry).FirstOrDefaultAsync(x => x.Id == id);
         if (s is null || s.DailyEntry is null || s.DailyEntry.ChildId != childId) return NotFound();
 
@@ -437,7 +444,7 @@ public class ParentTrackerController : ControllerBase
     [HttpDelete("sessions/{id:guid}")]
     public async Task<IActionResult> DeleteSession(Guid childId, Guid id)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var s = await _db.DailySessions.Include(x => x.DailyEntry).FirstOrDefaultAsync(x => x.Id == id);
         if (s is null || s.DailyEntry is null || s.DailyEntry.ChildId != childId) return NotFound();
 
@@ -457,7 +464,7 @@ public class ParentTrackerController : ControllerBase
     [HttpGet("summary/week")]
     public async Task<ActionResult<WeeklySummary>> GetWeek(Guid childId, DateTime weekStartUtc)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var start = DayFromUtc(weekStartUtc);
         var end = start.AddDays(6);
 
@@ -491,7 +498,7 @@ public class ParentTrackerController : ControllerBase
     [HttpGet("summary/month")]
     public async Task<ActionResult<MonthlySummary>> GetMonth(Guid childId, int year, int month)
     {
-        if (!await ChildBelongsToCurrentParent(childId)) return Forbid();
+        var (family, childOk) = await GetFamilyAndCheckChildAsync(childId); if (family is null) return NotFound(new { error = "No family" }); if (!childOk) return Forbid();
         var first = new DateOnly(year, month, 1);
         var last = first.AddMonths(1).AddDays(-1);
 

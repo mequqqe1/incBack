@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SharpAuthDemo.Contracts;
 using SharpAuthDemo.Data;
+using SharpAuthDemo.Services;
 
 namespace SharpAuthDemo.Controllers;
 
@@ -16,9 +17,10 @@ public class ParentProfileController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IFamilyContextService _familyContext;
 
-    public ParentProfileController(AppDbContext db, UserManager<ApplicationUser> userManager)
-    { _db = db; _userManager = userManager; }
+    public ParentProfileController(AppDbContext db, UserManager<ApplicationUser> userManager, IFamilyContextService familyContext)
+    { _db = db; _userManager = userManager; _familyContext = familyContext; }
 
     [HttpGet]
     public async Task<ActionResult<ParentProfileResponse>> GetMy()
@@ -26,9 +28,11 @@ public class ParentProfileController : ControllerBase
         var user = await _userManager.GetUserAsync(User);
         if (user is null) return Unauthorized();
 
-        var profile = await _db.ParentProfiles.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.UserId == user.Id);
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return NotFound(new { error = "No family. Create profile or accept invite." });
 
+        var profile = await _db.ParentProfiles.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == family.ParentProfileId);
         if (profile is null) return NotFound();
 
         return new ParentProfileResponse(
@@ -37,18 +41,30 @@ public class ParentProfileController : ControllerBase
         );
     }
 
-    [HttpPost] // upsert
+    [HttpPost] // upsert — только владелец семьи
     public async Task<ActionResult<ParentProfileResponse>> Upsert(UpsertParentProfileRequest req)
     {
         var user = await _userManager.GetUserAsync(User);
         if (user is null) return Unauthorized();
 
-        var profile = await _db.ParentProfiles.FirstOrDefaultAsync(p => p.UserId == user.Id);
-        if (profile is null)
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null)
         {
-            profile = new ParentProfile { UserId = user.Id };
-            _db.ParentProfiles.Add(profile);
+            var p = await _db.ParentProfiles.FirstOrDefaultAsync(x => x.UserId == user.Id);
+            if (p is null)
+            {
+                p = new ParentProfile { UserId = user.Id };
+                _db.ParentProfiles.Add(p);
+                await _db.SaveChangesAsync();
+            }
+            family = await _familyContext.GetCurrentFamilyAsync(user.Id);
         }
+
+        if (family!.Role != FamilyRole.Owner)
+            return Forbid(); // только владелец редактирует профиль семьи
+
+        var profile = await _db.ParentProfiles.FirstOrDefaultAsync(p => p.Id == family.ParentProfileId);
+        if (profile is null) return NotFound();
 
         profile.FirstName = req.FirstName ?? profile.FirstName;
         profile.LastName = req.LastName ?? profile.LastName;

@@ -16,7 +16,7 @@ public class ProfileAccessService
             .Select(p => p.Id);
 
         var member = _db.CaregiverMembers
-            .Where(m => m.UserId == userId && m.Status == INCBack.Models.CaregiverStatus.Active)
+            .Where(m => m.UserId == userId && (m.Status == INCBack.Models.CaregiverStatus.Active || m.Status == INCBack.Models.CaregiverStatus.Accepted))
             .Select(m => m.ParentProfileId);
 
         return await owned.Union(member).Distinct().ToListAsync();
@@ -38,7 +38,7 @@ public class ProfileAccessService
         var member = await _db.CaregiverMembers
             .AnyAsync(m => m.ParentProfileId == record.Id &&
                            m.UserId == userId &&
-                           m.Status == INCBack.Models.CaregiverStatus.Active);
+                           (m.Status == INCBack.Models.CaregiverStatus.Active || m.Status == INCBack.Models.CaregiverStatus.Accepted));
         return member;
     }
 }

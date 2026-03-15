@@ -20,7 +20,6 @@ public record BookingOutcomeResponse(
     DateTime? ParentAcknowledgedAtUtc
 );
 
-// для удобства деталки брони со вложенным Outcome
 public record BookingDetailsResponse(
     Guid Id,
     string SpecialistUserId,
@@ -31,7 +30,8 @@ public record BookingDetailsResponse(
     string? MessageFromParent,
     Guid? AvailabilitySlotId,
     Guid? ChildId,
+    Guid? AssignedCaregiverMemberId,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
-    BookingOutcomeResponse? Outcome // NEW
+    BookingOutcomeResponse? Outcome
 );

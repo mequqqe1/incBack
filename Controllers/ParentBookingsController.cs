@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using INCBack.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SharpAuthDemo.Data;
 using SharpAuthDemo.Models;
+using SharpAuthDemo.Services;
 using Swashbuckle.AspNetCore.Annotations;
 using Swashbuckle.Swagger.Annotations;
 
@@ -18,11 +19,13 @@ public class ParentBookingsController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly AppDbContext _db;
+    private readonly IFamilyContextService _familyContext;
 
-    public ParentBookingsController(UserManager<ApplicationUser> userManager, AppDbContext db)
+    public ParentBookingsController(UserManager<ApplicationUser> userManager, AppDbContext db, IFamilyContextService familyContext)
     {
         _userManager = userManager;
         _db = db;
+        _familyContext = familyContext;
     }
 
     // Единая проекция, которую EF может перевести в SQL
@@ -36,7 +39,8 @@ public class ParentBookingsController : ControllerBase
             b.Status,
             b.MessageFromParent,
             b.AvailabilitySlotId,
-            b.ChildId,                 // <-- порядок согласован
+            b.ChildId,
+            b.AssignedCaregiverMemberId,
             b.CreatedAtUtc,
             b.UpdatedAtUtc
         );
@@ -55,9 +59,13 @@ public class ParentBookingsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<BookingResponse>> Create([FromBody] CreateBookingRequest req)
     {
-        var parent = await _userManager.GetUserAsync(User);
-        if (parent is null) return Unauthorized();
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
 
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return NotFound(new { error = "No family" });
+
+        var parentUserId = family.OwnerUserId;
         var now = DateTime.UtcNow;
 
         await using var tx = await _db.Database.BeginTransactionAsync();
@@ -83,16 +91,16 @@ public class ParentBookingsController : ControllerBase
         if (slot.StartsAtUtc < now)
             return BadRequest(new { error = "Cannot book a past slot" });
 
-        // 4) ребёнок принадлежит текущему родителю
-        var childIsMine = await _db.Children
+        // 4) ребёнок принадлежит семье (ParentProfileId)
+        var childProfileId = await _db.Children
             .Where(c => c.Id == req.ChildId)
-            .Select(c => c.ParentProfile!.UserId)
+            .Select(c => c.ParentProfileId)
             .FirstOrDefaultAsync();
 
-        if (childIsMine is null)
+        if (childProfileId == default)
             return NotFound(new { error = "Child not found" });
 
-        if (childIsMine != parent.Id)
+        if (childProfileId != family.ParentProfileId)
             return Forbid();
 
         // 5) атомарно занимаем слот
@@ -105,17 +113,27 @@ public class ParentBookingsController : ControllerBase
         if (affected == 0)
             return Conflict(new { error = "Slot already booked" });
 
-        // 6) создаём бронь
+        // 6) опционально проверяем, что опекун свой
+        if (req.AssignedCaregiverMemberId.HasValue)
+        {
+            var caregiverOk = await _db.CaregiverMembers
+                .AnyAsync(m => m.Id == req.AssignedCaregiverMemberId.Value && m.ParentProfileId == family.ParentProfileId);
+            if (!caregiverOk)
+                return BadRequest(new { error = "AssignedCaregiverMemberId must belong to your family" });
+        }
+
+        // 7) создаём бронь
         var booking = new Booking
         {
             SpecialistUserId = slot.SpecialistUserId,
-            ParentUserId = parent.Id,
+            ParentUserId = parentUserId,
             StartsAtUtc = slot.StartsAtUtc,
             EndsAtUtc = slot.EndsAtUtc,
             Status = BookingStatus.Pending,
             MessageFromParent = req.MessageFromParent,
             AvailabilitySlotId = slot.Id,
             ChildId = req.ChildId,
+            AssignedCaregiverMemberId = req.AssignedCaregiverMemberId,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
@@ -124,12 +142,11 @@ public class ParentBookingsController : ControllerBase
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
 
-        // Можно вернуть 200 OK (как сейчас) или 201 Created с Location
         return Ok(new BookingResponse(
             booking.Id, booking.SpecialistUserId, booking.ParentUserId,
             booking.StartsAtUtc, booking.EndsAtUtc, booking.Status,
             booking.MessageFromParent, booking.AvailabilitySlotId, booking.ChildId,
-            booking.CreatedAtUtc, booking.UpdatedAtUtc));
+            booking.AssignedCaregiverMemberId, booking.CreatedAtUtc, booking.UpdatedAtUtc));
     }
 
     /// <summary>
@@ -144,10 +161,13 @@ public class ParentBookingsController : ControllerBase
         [FromQuery] DateTime? fromUtc,
         [FromQuery] DateTime? toUtc)
     {
-        var parent = await _userManager.GetUserAsync(User);
-        if (parent is null) return Unauthorized();
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
 
-        var q = _db.Bookings.Where(b => b.ParentUserId == parent.Id);
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return NotFound(new { error = "No family" });
+
+        var q = _db.Bookings.Where(b => b.ParentUserId == family.OwnerUserId);
 
         if (status is not null) q = q.Where(b => b.Status == status);
         if (fromUtc is not null && toUtc is not null && toUtc > fromUtc)
@@ -173,10 +193,13 @@ public class ParentBookingsController : ControllerBase
     [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Cancel(Guid id)
     {
-        var parent = await _userManager.GetUserAsync(User);
-        if (parent is null) return Unauthorized();
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
 
-        var booking = await _db.Bookings.FirstOrDefaultAsync(b => b.Id == id && b.ParentUserId == parent.Id);
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return NotFound(new { error = "No family" });
+
+        var booking = await _db.Bookings.FirstOrDefaultAsync(b => b.Id == id && b.ParentUserId == family.OwnerUserId);
         if (booking is null) return NotFound();
 
         if (booking.Status is BookingStatus.CancelledByParent or BookingStatus.CancelledBySpecialist or BookingStatus.Declined)
@@ -198,16 +221,45 @@ public class ParentBookingsController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    /// <summary>Назначить опекуна, который ведёт на встречу (для семейного календаря).</summary>
+    [HttpPatch("{id:guid}/assign-caregiver")]
+    public async Task<IActionResult> AssignCaregiver(Guid id, [FromBody] AssignCaregiverRequest req)
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return NotFound(new { error = "No family" });
+
+        var booking = await _db.Bookings.FirstOrDefaultAsync(b => b.Id == id && b.ParentUserId == family.OwnerUserId);
+        if (booking is null) return NotFound();
+
+        if (req.AssignedCaregiverMemberId.HasValue)
+        {
+            var ok = await _db.CaregiverMembers.AnyAsync(m => m.Id == req.AssignedCaregiverMemberId.Value && m.ParentProfileId == family.ParentProfileId);
+            if (!ok) return BadRequest(new { error = "Caregiver must belong to your family" });
+        }
+
+        booking.AssignedCaregiverMemberId = req.AssignedCaregiverMemberId;
+        booking.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpGet("{id:guid}/outcome")]
     public async Task<ActionResult<BookingOutcomeResponse>> GetOutcome(Guid id)
     {
-        var parent = await _userManager.GetUserAsync(User);
-        if (parent is null) return Unauthorized();
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return NotFound(new { error = "No family" });
 
         var b = await _db.Bookings
             .AsNoTracking()
             .Include(x => x.Outcome)
-            .FirstOrDefaultAsync(x => x.Id == id && x.ParentUserId == parent.Id);
+            .FirstOrDefaultAsync(x => x.Id == id && x.ParentUserId == family.OwnerUserId);
 
         if (b is null) return NotFound();
 
@@ -223,11 +275,14 @@ public class ParentBookingsController : ControllerBase
     [HttpPost("{id:guid}/outcome/ack")]
     public async Task<IActionResult> AcknowledgeOutcome(Guid id)
     {
-        var parent = await _userManager.GetUserAsync(User);
-        if (parent is null) return Unauthorized();
+        var user = await _userManager.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+
+        var family = await _familyContext.GetCurrentFamilyAsync(user.Id);
+        if (family is null) return NotFound(new { error = "No family" });
 
         var outcome = await _db.BookingOutcomes
-            .FirstOrDefaultAsync(o => o.BookingId == id && o.ParentUserId == parent.Id);
+            .FirstOrDefaultAsync(o => o.BookingId == id && o.ParentUserId == family.OwnerUserId);
 
         if (outcome is null) return NotFound();
 
@@ -237,4 +292,6 @@ public class ParentBookingsController : ControllerBase
 
         return NoContent();
     }
+
+    public record AssignCaregiverRequest(Guid? AssignedCaregiverMemberId);
 }

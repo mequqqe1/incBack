@@ -1,4 +1,4 @@
-﻿// Data/AppDbContext.cs
+// Data/AppDbContext.cs
 using INCBack.Models;
 using INCBack.Models.Tracker;
 using INCBack.Models.ZeynAI;
@@ -37,6 +37,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
     public DbSet<INCBack.Models.Tracker.DailySession> DailySessions => Set<INCBack.Models.Tracker.DailySession>();
     public DbSet<AIConversation> AIConversations => Set<AIConversation>();
     public DbSet<AIMessage> AIMessages => Set<AIMessage>();
+    public DbSet<ParentSpecialistConversation> ParentSpecialistConversations => Set<ParentSpecialistConversation>();
+    public DbSet<ParentSpecialistMessage> ParentSpecialistMessages => Set<ParentSpecialistMessage>();
+    public DbSet<ParentFavoriteSpecialist> ParentFavoriteSpecialists => Set<ParentFavoriteSpecialist>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -116,6 +119,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
             e.HasIndex(b => new { b.ParentUserId, b.StartsAtUtc });
             e.HasOne(b => b.AvailabilitySlot).WithMany()
                 .HasForeignKey(b => b.AvailabilitySlotId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(b => b.AssignedCaregiverMember).WithMany()
+                .HasForeignKey(b => b.AssignedCaregiverMemberId)
                 .OnDelete(DeleteBehavior.SetNull);
             e.HasCheckConstraint("CK_Booking_Time", "\"EndsAtUtc\" > \"StartsAtUtc\"");
         });
@@ -289,6 +295,29 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, str
             e.HasIndex(x => new { x.ConversationId, x.CreatedAtUtc });
             e.Property(x => x.Role).HasConversion<int>();
             e.Property(x => x.Content).HasColumnType("text");
+        });
+
+        builder.Entity<ParentSpecialistConversation>(e =>
+        {
+            e.ToTable("parent_specialist_conversations");
+            e.HasIndex(x => new { x.ParentUserId, x.SpecialistUserId }).IsUnique();
+            e.HasMany(x => x.Messages)
+                .WithOne(m => m.Conversation)
+                .HasForeignKey(m => m.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ParentSpecialistMessage>(e =>
+        {
+            e.ToTable("parent_specialist_messages");
+            e.HasIndex(x => new { x.ConversationId, x.CreatedAtUtc });
+            e.Property(x => x.Text).HasMaxLength(4000);
+        });
+
+        builder.Entity<ParentFavoriteSpecialist>(e =>
+        {
+            e.ToTable("parent_favorite_specialists");
+            e.HasIndex(x => new { x.ParentUserId, x.SpecialistUserId }).IsUnique();
         });
     }
 }

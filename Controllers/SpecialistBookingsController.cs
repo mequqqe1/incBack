@@ -1,4 +1,4 @@
-﻿using INCBack.Models;
+using INCBack.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -44,7 +44,7 @@ public class SpecialistBookingsController : ControllerBase
             .OrderByDescending(b => b.StartsAtUtc)
             .Select(b => new BookingResponse(
                 b.Id, b.SpecialistUserId, b.ParentUserId, b.StartsAtUtc, b.EndsAtUtc,
-                b.Status, b.MessageFromParent, b.AvailabilitySlotId, b.ChildId, b.CreatedAtUtc, b.UpdatedAtUtc))
+                b.Status, b.MessageFromParent, b.AvailabilitySlotId, b.ChildId, b.AssignedCaregiverMemberId, b.CreatedAtUtc, b.UpdatedAtUtc))
 
             .AsNoTracking()
             .ToListAsync();
@@ -177,7 +177,7 @@ public class SpecialistBookingsController : ControllerBase
 
         return Ok(new BookingDetailsResponse(
             b.Id, b.SpecialistUserId, b.ParentUserId, b.StartsAtUtc, b.EndsAtUtc,
-            b.Status, b.MessageFromParent, b.AvailabilitySlotId, b.ChildId,
+            b.Status, b.MessageFromParent, b.AvailabilitySlotId, b.ChildId, b.AssignedCaregiverMemberId,
             b.CreatedAtUtc, b.UpdatedAtUtc, outcome));
     }
 
